@@ -1,0 +1,750 @@
+import React, { useEffect, useState } from "react";
+import {
+  Heart, Home, CalendarDays, BookOpen, MessageCircle, Settings,
+  Plus, Trash2, Pencil, Clock, Droplets, Smile, ShieldCheck,
+  Sparkles, X, Check, Upload, Eye, EyeOff, Play, Pause, RotateCcw
+} from "lucide-react";
+
+const COLORS = {
+  pink: "#e879a8",
+  rose: "#f6d1df",
+  plum: "#6c4258",
+  cream: "#fffaf7",
+  lilac: "#f2ebfa",
+  mint: "#e8f4eb"
+};
+
+const todayISO = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+const fmt = (date) => {
+  if (!date) return "";
+  return new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", {
+    day: "numeric",
+    month: "short"
+  });
+};
+
+const addDays = (dateStr, days) => {
+  if (!dateStr) return "";
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + Number(days));
+  return d.toISOString().slice(0, 10);
+};
+
+const initial = {
+  profile: null,
+  cycleLength: "28",
+  periodLength: "5",
+  lastPeriod: "",
+  enabledPrediction: false,
+  entries: {},
+  notes: [],
+  settings: { hideOnShared: false }
+};
+
+function loadData() {
+  try {
+    return { ...initial, ...JSON.parse(localStorage.getItem("luna-data") || "{}") };
+  } catch {
+    return initial;
+  }
+}
+
+const saveData = (data) => {
+  try {
+    localStorage.setItem("luna-data", JSON.stringify(data));
+  } catch {}
+};
+
+const STYLES = `
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  body { background-color: #f7eff4; color: #4a2c3d; }
+  .app-container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: ${COLORS.cream}; display: flex; flex-direction: column; position: relative; box-shadow: 0 0 25px rgba(108, 66, 88, 0.08); }
+ 
+  /* Boas-vindas */
+  .welcome { min-height: 100vh; background: linear-gradient(135deg, ${COLORS.rose} 0%, ${COLORS.lilac} 100%); display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .welcome-card { background: white; padding: 32px 24px; border-radius: 28px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 12px 30px rgba(108, 66, 88, 0.12); }
+  .moon { font-size: 48px; margin-bottom: 12px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: ${COLORS.pink}; margin-bottom: 8px; }
+  .welcome-card h1 { color: ${COLORS.plum}; font-size: 24px; margin-bottom: 12px; }
+  .welcome-card p.desc { color: #6e5060; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+ 
+  /* Formulários e Botões */
+  .input-group { text-align: left; margin-bottom: 16px; }
+  .input-group label { display: block; font-size: 13px; font-weight: 600; color: ${COLORS.plum}; margin-bottom: 6px; }
+  input[type="text"], input[type="number"], input[type="date"], textarea { width: 100%; padding: 12px 14px; border: 1.5px solid #e6d5df; border-radius: 14px; font-size: 14px; color: ${COLORS.plum}; background: #fff; outline: none; transition: border-color 0.2s; }
+  input:focus, textarea:focus { border-color: ${COLORS.pink}; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: 14px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: ${COLORS.pink}; color: white; width: 100%; }
+  .btn-primary:hover { background: #d66595; }
+  .btn-secondary { background: ${COLORS.lilac}; color: ${COLORS.plum}; }
+  .btn-outline { background: transparent; border: 1.5px solid #e6d5df; color: ${COLORS.plum}; }
+  .btn-danger { background: #fee2e2; color: #b91c1c; }
+  .btn-sm { padding: 8px 12px; font-size: 12px; border-radius: 10px; }
+
+  /* Header */
+  .header { padding: 20px 20px 14px; background: white; border-bottom: 1px solid #f2e4ec; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; }
+  .header-title h2 { font-size: 18px; color: ${COLORS.plum}; }
+  .header-title span { font-size: 12px; color: #8c6b7c; }
+  .avatar-btn { display: flex; align-items: center; gap: 8px; background: ${COLORS.rose}; border: none; padding: 6px 12px 6px 6px; border-radius: 20px; cursor: pointer; color: ${COLORS.plum}; font-weight: 600; font-size: 13px; }
+  .avatar-img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: ${COLORS.pink}; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+
+  /* Conteúdo Principal */
+  .main-content { flex: 1; padding: 20px; padding-bottom: 90px; overflow-y: auto; }
+  .card { background: white; border-radius: 20px; padding: 18px; margin-bottom: 16px; border: 1px solid #f2e4ec; box-shadow: 0 4px 12px rgba(108, 66, 88, 0.03); }
+  .card-pink { background: linear-gradient(135deg, #fff0f6 0%, #f8f0fc 100%); border-color: #f6d1df; }
+  .card-mint { background: ${COLORS.mint}; border-color: #d1e8d7; }
+  .card-title { font-size: 15px; font-weight: 700; color: ${COLORS.plum}; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+  /* Chips e Seletores */
+  .chip-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 8px 14px; border-radius: 20px; font-size: 13px; border: 1.5px solid #e6d5df; background: white; color: ${COLORS.plum}; cursor: pointer; transition: all 0.15s; }
+  .chip.active { background: ${COLORS.pink}; color: white; border-color: ${COLORS.pink}; font-weight: 600; }
+
+  /* Toggle Switch */
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; }
+  .toggle-switch { position: relative; width: 46px; height: 26px; background: #e6d5df; border-radius: 20px; border: none; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+  .toggle-switch.on { background: ${COLORS.pink}; }
+  .toggle-knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: transform 0.2s; }
+  .toggle-switch.on .toggle-knob { transform: translateX(20px); }
+
+  /* Navegação Inferior */
+  .bottom-nav { position: fixed; bottom: 0; width: 100%; max-width: 480px; background: white; border-top: 1px solid #f2e4ec; display: flex; justify-content: space-around; padding: 10px 4px; z-index: 20; }
+  .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: #9e8291; font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px 8px; border-radius: 12px; }
+  .nav-item.active { color: ${COLORS.pink}; background: #fff0f6; }
+
+  /* Chat Luna */
+  .chat-box { display: flex; flex-direction: column; gap: 12px; max-height: 55vh; overflow-y: auto; padding-bottom: 10px; }
+  .msg { max-width: 82%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.45; }
+  .msg.assistant { background: white; border: 1px solid #f2e4ec; color: ${COLORS.plum}; align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg.user { background: ${COLORS.pink}; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .chat-form { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* Utilitários */
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: ${COLORS.plum}; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(74, 44, 61, 0.5); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 40; }
+  .modal { background: white; padding: 24px; border-radius: 24px; width: 100%; max-width: 360px; text-align: center; }
+`;
+
+const MOODS = ["Feliz", "Calma", "Sensível", "Cansada", "Ansiosa", "Irritada"];
+const SYMPTOMS = ["Cólica leve", "Dor de cabeça", "Inchaço", "Fadiga", "Acne", "Sem sintomas"];
+const FLOWS = ["Nenhum", "Leve", "Moderado", "Intenso"];
+
+export default function App() {
+  const [data, setData] = useState(loadData);
+  const [page, setPage] = useState(data.profile ? "inicio" : "boasvindas");
+  const [date, setDate] = useState(todayISO());
+  const [toast, setToast] = useState("");
+  const [showConfirm, setShowConfirm] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [editingNote, setEditingNote] = useState(null);
+  const [chat, setChat] = useState([
+    {
+      role: "assistant",
+      text: "Oi, eu sou a Luna 🌙 Pode conversar comigo sobre sentimentos, pedir ajuda com o app ou só bater papo. O que está passando pela sua cabeça?"
+    }
+  ]);
+  const [message, setMessage] = useState("");
+  const [photoPreview, setPhotoPreview] = useState(data.profile?.photo || "");
+  const [nameInput, setNameInput] = useState(data.profile?.name || "");
+  const [timerSeconds, setTimerSeconds] = useState(15 * 60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [privacyUnlocked, setPrivacyUnlocked] = useState(false);
+
+  useEffect(() => {
+    saveData(data);
+  }, [data]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 2800);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const interval = setInterval(() => {
+      setTimerSeconds((prev) => {
+        if (prev <= 1) {
+          setTimerRunning(false);
+          setToast("Tempo concluído! Que bom que você tirou um momento para si 💜");
+          return 15 * 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timerRunning]);
+
+  const notify = (msg) => setToast(msg);
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleStart = (e) => {
+    e.preventDefault();
+    if (!nameInput.trim()) return notify("Digite seu nome ou apelido.");
+    setData((prev) => ({
+      ...prev,
+      profile: { name: nameInput.trim(), photo: photoPreview }
+    }));
+    setPage("inicio");
+    notify(`Bem-vinda, ${nameInput.trim()}!`);
+  };
+
+  const currentEntry = data.entries[date] || { mood: "", symptoms: [], flow: "Nenhum" };
+
+  const updateEntry = (patch) => {
+    setData((prev) => ({
+      ...prev,
+      entries: {
+        ...prev.entries,
+        [date]: { ...currentEntry, ...patch }
+      }
+    }));
+  };
+
+  const toggleSymptom = (sym) => {
+    const exists = currentEntry.symptoms.includes(sym);
+    const updated = exists
+      ? currentEntry.symptoms.filter((s) => s !== sym)
+      : [...currentEntry.symptoms, sym];
+    updateEntry({ symptoms: updated });
+  };
+
+  const handleSaveNote = (e) => {
+    e.preventDefault();
+    if (!noteDraft.trim()) return;
+    if (editingNote) {
+      setData((prev) => ({
+        ...prev,
+        notes: prev.notes.map((n) =>
+          n.id === editingNote ? { ...n, text: noteDraft.trim(), updatedAt: todayISO() } : n
+        )
+      }));
+      setEditingNote(null);
+      notify("Anotação atualizada!");
+    } else {
+      setData((prev) => ({
+        ...prev,
+        notes: [{ id: Date.now(), text: noteDraft.trim(), date: todayISO() }, ...prev.notes]
+      }));
+      notify("Anotação salva!");
+    }
+    setNoteDraft("");
+  };
+
+  const handleSendChat = (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    const userMsg = message.trim();
+    setMessage("");
+    let reply = "Obrigada por compartilhar isso comigo. Respire fundo e lembre-se de respeitar o seu ritmo hoje 🌸";
+    const lower = userMsg.toLowerCase();
+    if (lower.includes("cólica") || lower.includes("dor")) {
+      reply = "Sinto muito que esteja com desconforto. Uma bolsa de água morna, hidratação e descanso leve costumam ajudar bastante.";
+    } else if (lower.includes("triste") || lower.includes("ansios") || lower.includes("cansad")) {
+      reply = "Tudo bem não estar 100% todos os dias. Que tal usar o cronômetro de 15 minutos na aba Início para fazer uma pausa só sua?";
+    } else if (lower.includes("ciclo") || lower.includes("menstrua")) {
+      reply = "Você pode registrar a data da sua última menstruação na aba Ciclo para ativar a previsão automática.";
+    }
+    setChat((prev) => [
+      ...prev,
+      { role: "user", text: userMsg },
+      { role: "assistant", text: reply }
+    ]);
+  };
+
+  const nextPeriodDate =
+    data.enabledPrediction && data.lastPeriod && data.cycleLength
+      ? addDays(data.lastPeriod, data.cycleLength)
+      : "";
+
+  const formatTimer = (sec) => {
+    const m = String(Math.floor(sec / 60)).padStart(2, "0");
+    const s = String(sec % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  if (page === "boasvindas") {
+    return (
+      <>
+        <style>{STYLES}</style>
+        {toast && <div className="toast">{toast}</div>}
+        <div className="welcome">
+          <form className="welcome-card" onSubmit={handleStart}>
+            <div className="moon">🌙</div>
+            <div className="eyebrow">BEM-VINDA À LUNA</div>
+            <h1>Seu espaço de cuidado e acolhimento</h1>
+            <p className="desc">
+              Acompanhe seu ciclo, registre como você se sente e mantenha suas anotações seguras no seu aparelho.
+            </p>
+
+            <div className="input-group">
+              <label>Como você gostaria de ser chamada?</label>
+              <input
+                type="text"
+                placeholder="Ex: Ana, Lua..."
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+              />
+            </div>
+
+            <div className="input-group">
+              <label>Foto de perfil (opcional)</label>
+              <label className="btn btn-outline" style={{ width: "100%", cursor: "pointer" }}>
+                <Upload size={16} />
+                {photoPreview ? "Trocar imagem" : "Escolher imagem"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
+
+            <button type="submit" className="btn btn-primary">
+              Começar jornada
+            </button>
+          </form>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <style>{STYLES}</style>
+      {toast && <div className="toast">{toast}</div>}
+      <div className="app-container">
+        {/* Header */}
+        <header className="header">
+          <div className="header-title">
+            <h2>Olá, {data.profile?.name || "Luna"} 🌙</h2>
+            <span>{new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</span>
+          </div>
+          <button className="avatar-btn" onClick={() => setPage("ajustes")}>
+            {data.profile?.photo ? (
+              <img src={data.profile.photo} alt="Perfil" className="avatar-img" />
+            ) : (
+              <div className="avatar-img">{(data.profile?.name || "L")[0].toUpperCase()}</div>
+            )}
+            Perfil
+          </button>
+        </header>
+
+        {/* Conteúdo Principal */}
+        <main className="main-content">
+          {data.settings.hideOnShared && !privacyUnlocked ? (
+            <div className="card" style={{ textAlign: "center", padding: "32px 20px" }}>
+              <ShieldCheck size={40} color={COLORS.pink} style={{ margin: "0 auto 12px" }} />
+              <h3 style={{ color: COLORS.plum, marginBottom: 8 }}>Modo Discreto Ativado</h3>
+              <p style={{ fontSize: 13, color: "#6e5060", marginBottom: 16 }}>
+                Seus dados pessoais estão ocultos para proteger sua privacidade em aparelhos compartilhados.
+              </p>
+              <button className="btn btn-primary" onClick={() => setPrivacyUnlocked(true)}>
+                <Eye size={16} /> Mostrar meus registros
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* ABA INÍCIO */}
+              {page === "inicio" && (
+                <>
+                  <div className="card card-pink">
+                    <div className="card-title">
+                      <Heart size={18} color={COLORS.pink} /> Resumo do Ciclo
+                    </div>
+                    {nextPeriodDate ? (
+                      <p style={{ fontSize: 14, lineHeight: 1.5 }}>
+                        Próxima menstruação estimada para <strong>{fmt(nextPeriodDate)}</strong> (ciclo de {data.cycleLength} dias).
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 14, lineHeight: 1.5 }}>
+                        Ative a previsão na aba <strong>Ciclo</strong> para acompanhar suas datas estimadas.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Registro rápido do dia */}
+                  <div className="card">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        <Smile size={18} color={COLORS.pink} /> Como você está hoje?
+                      </div>
+                      <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        style={{ width: "auto", padding: "6px 10px", fontSize: 12 }}
+                      />
+                    </div>
+
+                    <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#8c6b7c" }}>Humor</p>
+                    <div className="chip-grid" style={{ marginBottom: 14 }}>
+                      {MOODS.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`chip ${currentEntry.mood === m ? "active" : ""}`}
+                          onClick={() => updateEntry({ mood: m })}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+
+                    <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#8c6b7c" }}>Fluxo</p>
+                    <div className="chip-grid" style={{ marginBottom: 14 }}>
+                      {FLOWS.map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          className={`chip ${currentEntry.flow === f ? "active" : ""}`}
+                          onClick={() => updateEntry({ flow: f })}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+
+                    <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#8c6b7c" }}>Sintomas</p>
+                    <div className="chip-grid">
+                      {SYMPTOMS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`chip ${currentEntry.symptoms.includes(s) ? "active" : ""}`}
+                          onClick={() => toggleSymptom(s)}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Cronômetro de Autocuidado */}
+                  <div className="card card-mint">
+                    <div className="card-title">
+                      <Clock size={18} color="#2e7d47" /> Pausa de Autocuidado (15 min)
+                    </div>
+                    <p style={{ fontSize: 13, color: "#3d5a45", marginBottom: 12 }}>
+                      Reserve alguns minutos para descansar, respirar ou tomar um chá sem pressa.
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 24, fontWeight: 700, color: "#2e7d47" }}>
+                        {formatTimer(timerSeconds)}
+                      </span>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setTimerRunning((r) => !r)}
+                        >
+                          {timerRunning ? <Pause size={14} /> : <Play size={14} />}
+                          {timerRunning ? "Pausar" : "Iniciar"}
+                        </button>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => {
+                            setTimerRunning(false);
+                            setTimerSeconds(15 * 60);
+                          }}
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ABA CICLO */}
+              {page === "ciclo" && (
+                <div className="card">
+                  <div className="card-title">
+                    <Droplets size={18} color={COLORS.pink} /> Configurações do Ciclo
+                  </div>
+
+                  <div className="toggle-row" style={{ marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.plum }}>Ativar previsão do ciclo</div>
+                      <div style={{ fontSize: 12, color: "#8c6b7c" }}>Calcula a próxima data estimada automaticamente</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`toggle-switch ${data.enabledPrediction ? "on" : ""}`}
+                      onClick={() => setData((p) => ({ ...p, enabledPrediction: !p.enabledPrediction }))}
+                    >
+                      <div className="toggle-knob" />
+                    </button>
+                  </div>
+
+                  <div className="input-group">
+                    <label>Data da última menstruação</label>
+                    <input
+                      type="date"
+                      value={data.lastPeriod}
+                      onChange={(e) => setData((p) => ({ ...p, lastPeriod: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Duração média do ciclo (dias)</label>
+                    <input
+                      type="number"
+                      min="20"
+                      max="45"
+                      value={data.cycleLength}
+                      onChange={(e) => setData((p) => ({ ...p, cycleLength: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>Duração média da menstruação (dias)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={data.periodLength}
+                      onChange={(e) => setData((p) => ({ ...p, periodLength: e.target.value }))}
+                    />
+                  </div>
+
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => notify("Dados do ciclo atualizados!")}
+                  >
+                    Salvar configurações
+                  </button>
+                </div>
+              )}
+
+              {/* ABA DIÁRIO / NOTAS */}
+              {page === "diario" && (
+                <>
+                  <form className="card" onSubmit={handleSaveNote}>
+                    <div className="card-title">
+                      <BookOpen size={18} color={COLORS.pink} /> {editingNote ? "Editar Anotação" : "Nova Anotação"}
+                    </div>
+                    <div className="input-group">
+                      <textarea
+                        rows="3"
+                        placeholder="Escreva seus pensamentos, dúvidas ou lembretes..."
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button type="submit" className="btn btn-primary">
+                        {editingNote ? "Atualizar" : "Salvar anotação"}
+                      </button>
+                      {editingNote && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => {
+                            setEditingNote(null);
+                            setNoteDraft("");
+                          }}
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </form>
+
+                  {data.notes.length === 0 ? (
+                    <p style={{ textAlign: "center", fontSize: 13, color: "#8c6b7c", marginTop: 20 }}>
+                      Nenhuma anotação salva ainda.
+                    </p>
+                  ) : (
+                    data.notes.map((n) => (
+                      <div key={n.id} className="card">
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, color: "#8c6b7c", fontWeight: 600 }}>{fmt(n.date)}</span>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                setEditingNote(n.id);
+                                setNoteDraft(n.text);
+                              }}
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() =>
+                                setData((prev) => ({
+                                  ...prev,
+                                  notes: prev.notes.filter((item) => item.id !== n.id)
+                                }))
+                              }
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</p>
+                      </div>
+                    ))
+                  )}
+                </>
+              )}
+
+              {/* ABA CHAT */}
+              {page === "chat" && (
+                <div className="card">
+                  <div className="card-title">
+                    <Sparkles size={18} color={COLORS.pink} /> Conversa com a Luna
+                  </div>
+                  <div className="chat-box">
+                    {chat.map((c, idx) => (
+                      <div key={idx} className={`msg ${c.role}`}>
+                        {c.text}
+                      </div>
+                    ))}
+                  </div>
+                  <form className="chat-form" onSubmit={handleSendChat}>
+                    <input
+                      type="text"
+                      placeholder="Escreva sua mensagem..."
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                    />
+                    <button type="submit" className="btn btn-primary" style={{ width: "auto" }}>
+                      Enviar
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* ABA AJUSTES */}
+              {page === "ajustes" && (
+                <div className="card">
+                  <div className="card-title">
+                    <Settings size={18} color={COLORS.pink} /> Perfil e Privacidade
+                  </div>
+                  <div className="input-group">
+                    <label>Seu nome</label>
+                    <input
+                      type="text"
+                      value={data.profile?.name || ""}
+                      onChange={(e) =>
+                        setData((p) => ({
+                          ...p,
+                          profile: { ...p.profile, name: e.target.value }
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="toggle-row" style={{ marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.plum }}>Modo discreto</div>
+                      <div style={{ fontSize: 12, color: "#8c6b7c" }}>Oculta registros ao abrir em aparelho compartilhado</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`toggle-switch ${data.settings.hideOnShared ? "on" : ""}`}
+                      onClick={() => {
+                        const nextVal = !data.settings.hideOnShared;
+                        setData((p) => ({ ...p, settings: { ...p.settings, hideOnShared: nextVal } }));
+                        if (nextVal) setPrivacyUnlocked(true);
+                      }}
+                    >
+                      <div className="toggle-knob" />
+                    </button>
+                  </div>
+
+                  {data.settings.hideOnShared && privacyUnlocked && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ width: "100%", marginBottom: 12 }}
+                      onClick={() => setPrivacyUnlocked(false)}
+                    >
+                      <EyeOff size={16} /> Bloquear visualização agora
+                    </button>
+                  )}
+
+                  <button
+                    className="btn btn-danger"
+                    style={{ width: "100%" }}
+                    onClick={() => setShowConfirm("reset")}
+                  >
+                    <Trash2 size={16} /> Apagar todos os dados
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </main>
+
+        {/* Navegação Inferior */}
+        <nav className="bottom-nav">
+          <button className={`nav-item ${page === "inicio" ? "active" : ""}`} onClick={() => setPage("inicio")}>
+            <Home size={20} />
+            Início
+          </button>
+          <button className={`nav-item ${page === "ciclo" ? "active" : ""}`} onClick={() => setPage("ciclo")}>
+            <CalendarDays size={20} />
+            Ciclo
+          </button>
+          <button className={`nav-item ${page === "diario" ? "active" : ""}`} onClick={() => setPage("diario")}>
+            <BookOpen size={20} />
+            Diário
+          </button>
+          <button className={`nav-item ${page === "chat" ? "active" : ""}`} onClick={() => setPage("chat")}>
+            <MessageCircle size={20} />
+            Luna
+          </button>
+          <button className={`nav-item ${page === "ajustes" ? "active" : ""}`} onClick={() => setPage("ajustes")}>
+            <Settings size={20} />
+            Ajustes
+          </button>
+        </nav>
+
+        {/* Modal de Confirmação */}
+        {showConfirm === "reset" && (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <h3 style={{ color: COLORS.plum, marginBottom: 8 }}>Apagar tudo?</h3>
+              <p style={{ fontSize: 13, color: "#6e5060", marginBottom: 20 }}>
+                Isso removerá permanentemente seu perfil, histórico de ciclo e anotações deste navegador.
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setShowConfirm(null)}>
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    localStorage.removeItem("luna-data");
+                    setData(initial);
+                    setNameInput("");
+                    setPhotoPreview("");
+                    setShowConfirm(null);
+                    setPage("boasvindas");
+                  }}
+                >
+                  Apagar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
